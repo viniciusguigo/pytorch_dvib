@@ -5,13 +5,13 @@ based on the "Deep Variational Information Bottleneck" paper by Alexander A.
 Alemi, Ian Fischer, Joshua V. Dillon, Kevin Murphy, and their original release
 in Tensorflow (https://github.com/alexalemi/vib_demo).
 """
+import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 from torch.distributions.normal import Normal
 
-import numpy as np
 import matplotlib.pyplot as plt
 
 
@@ -130,7 +130,7 @@ if __name__ == "__main__":
 
     # train data (1D, continuous case)
     n_samples = 1
-    x_data = torch.linspace(0, 2*np.pi, input_size)
+    x_data = torch.linspace(0, 2*math.pi, input_size)
     input_data = torch.sin(x_data) + torch.rand((n_samples, input_size))*.1
 
     # train
@@ -140,7 +140,7 @@ if __name__ == "__main__":
 
     # test data (1D, continuous case)
     n_samples = 1
-    x_data = torch.linspace(0, 2*np.pi, input_size)
+    x_data = torch.linspace(0, 2*math.pi, input_size)
     input_data = torch.sin(x_data) + torch.rand((n_samples, input_size))*.1
     
     # predict outputs
