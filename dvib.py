@@ -11,19 +11,27 @@ import torch.nn.functional as F
 import torch.optim as optim
 from torch.distributions.normal import Normal
 
+import numpy as np
+import matplotlib.pyplot as plt
+
 
 class EncoderDVIB(nn.Module):
     """Encoder for the Deep Variational Information Bottleneck (DVIB).
     """
-    def __init__(self, input_size, latent_dim, num_latent, out_size1=1024,
+    def __init__(self, input_size, latent_dim, out_size1=1024,
                  out_size2=1024):        
         super(EncoderDVIB, self).__init__()
-        self.num_latent = num_latent
         # encoder network
         self.linear1 = nn.Linear(input_size, out_size1)
         self.linear2 = nn.Linear(out_size1, out_size2)
         self.encoder_mean = nn.Linear(out_size2, latent_dim)
         self.encoder_std = nn.Linear(out_size2, latent_dim)
+
+        # network initialization
+        nn.init.xavier_uniform_(self.linear1.weight)
+        nn.init.xavier_uniform_(self.linear2.weight)
+        nn.init.xavier_uniform_(self.encoder_mean.weight)
+        nn.init.xavier_uniform_(self.encoder_std.weight)
 
     def forward(self, x):
         # forward pass through encoder
@@ -47,10 +55,13 @@ class DecoderDVIB(nn.Module):
         # decoder network
         self.linear1 = nn.Linear(latent_dim, output_size)
 
+        # network initialization
+        nn.init.xavier_uniform_(self.linear1.weight)
+
     def forward(self, x):
         # forward pass through decoder
-        return F.softmax(self.linear1(x), dim=-1)
-        
+        # return F.softmax(self.linear1(x), dim=-1) # for discrete
+        return self.linear1(x)    
 
 
 class DVIB(nn.Module):
@@ -59,42 +70,89 @@ class DVIB(nn.Module):
     Arguments:
         input_size: size of input data
         latent_dim: dimension of encoder mean and std
-        num_latent: number of samples to be sampled from encoder
         output_size: size of the output data
     """
-    def __init__(self, input_size, latent_dim, num_latent, output_size):        
+    def __init__(self, input_size, latent_dim, output_size):        
         super(DVIB, self).__init__()
         # store DVIB hyperparamenters
         self.input_size = input_size
         self.latent_dim = latent_dim
-        self.num_latent = num_latent
         self.output_size = output_size
 
         # initialize encoder and decoder
-        self.encoder = EncoderDVIB(input_size, latent_dim, num_latent)
+        self.encoder = EncoderDVIB(input_size, latent_dim)
         self.decoder = DecoderDVIB(latent_dim, output_size)
 
     def forward(self, x):
         # pass input through encoder
-        x = self.encoder(x)
+        latent = self.encoder(x)
                 
         # pass latent through decoder
-        output = self.decoder(x)
+        output = self.decoder(latent)
 
-        return output
+        return output, latent
+
+def train(beta, epoch, model, optimizer, input_data):
+    # forward pass
+    output_data, output_latent = model(input_data)
+
+    # compute loss
+    reg = reg_loss(output_latent, prior.sample())
+    pred = pred_loss(input_data, output_data)
+    loss = pred + beta*reg
+
+    # backpropagate and update optimizer
+    optimizer.zero_grad()
+    loss.backward()
+    optimizer.step()
+
+    # print statistics
+    if epoch % 100 == 0:
+        print(f'Epoch {epoch} | Loss {loss.item()}')
+
 
 if __name__ == "__main__":
     # data parameters
-    input_size = 5
-    latent_dim = 2  # in the paper, K variable
-    num_latent = 3  # number of samples from encoder
+    input_size = 500
+    latent_dim = 50  # in the paper, K variable
     output_size = input_size
 
     # create DVIB
-    dvib = DVIB(input_size, latent_dim, num_latent,output_size)
+    dvib = DVIB(input_size, latent_dim, output_size)
 
-    # test data
-    n_samples = 3
-    input_data = torch.rand((n_samples, input_size))
-    print('input_data', input_data)
-    print('output_data', dvib(input_data))
+    # loss and optimizer
+    optimizer = optim.Adam(dvib.parameters())
+    beta = 1e-3
+    prior = Normal(torch.zeros(1,latent_dim), torch.ones(1,latent_dim))
+
+    pred_loss = nn.MSELoss(reduction='mean')
+    reg_loss = nn.KLDivLoss(reduction='batchmean')
+
+    # train data (1D, continuous case)
+    n_samples = 1
+    x_data = torch.linspace(0, 2*np.pi, input_size)
+    input_data = torch.sin(x_data) + torch.rand((n_samples, input_size))*.1
+
+    # train
+    epochs = 2500
+    for epoch in range(epochs):
+        train(beta, epoch, dvib, optimizer, input_data)
+
+    # test data (1D, continuous case)
+    n_samples = 1
+    x_data = torch.linspace(0, 2*np.pi, input_size)
+    input_data = torch.sin(x_data) + torch.rand((n_samples, input_size))*.1
+    
+    # predict outputs
+    dvib.eval()
+    output_data, output_latent = dvib(input_data)
+    output_data = output_data.detach().numpy()
+
+    # plot results
+    plt.figure()
+    plt.title('DVIB Example: 1D Continuous Function')
+    plt.plot(x_data.squeeze(), input_data.squeeze(), label='Input')
+    plt.plot(x_data.squeeze(), output_data.squeeze(), label='Output')
+    plt.legend()
+    plt.grid()
+    plt.show()
