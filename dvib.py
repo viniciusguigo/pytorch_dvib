@@ -78,10 +78,16 @@ class DVIB(nn.Module):
         self.input_size = input_size
         self.latent_dim = latent_dim
         self.output_size = output_size
+        self.beta = 1e-3
+        self.prior = Normal(torch.zeros(1,latent_dim),torch.ones(1,latent_dim))
 
         # initialize encoder and decoder
         self.encoder = EncoderDVIB(input_size, latent_dim)
         self.decoder = DecoderDVIB(latent_dim, output_size)
+
+        # loss function
+        self.pred_loss = nn.MSELoss(reduction='mean')  # prediction component
+        self.reg_loss = nn.KLDivLoss(reduction='batchmean')  # regularization
 
     def forward(self, x):
         # pass input through encoder
@@ -92,14 +98,55 @@ class DVIB(nn.Module):
 
         return output, latent
 
-def train(beta, epoch, model, optimizer, input_data):
+    def compute_loss(self, input_data, output_data, output_latent):
+        """Compute DVIB loss for a pair of input and output."""
+        reg = self.reg_loss(output_latent, self.prior.sample())
+        pred = self.pred_loss(input_data, output_data)
+        loss = pred + self.beta*reg
+
+        return loss
+
+    def test_simple_sinwave(self):
+        """Tests DVIB on learning how to generate a single frequency sine wave.
+        """
+        # optimizer
+        optimizer = optim.Adam(dvib.parameters())    
+
+        # train data (1D, continuous case)
+        n_samples = 1
+        x_data = torch.linspace(0, 2*math.pi, input_size)
+        input_data = torch.sin(x_data) + torch.rand((n_samples, input_size))*.1
+
+        # train
+        epochs = 2500
+        for epoch in range(epochs):
+            train(epoch, dvib, optimizer, input_data)
+
+        # test data (1D, continuous case)
+        n_samples = 1
+        x_data = torch.linspace(0, 2*math.pi, input_size)
+        input_data = torch.sin(x_data) + torch.rand((n_samples, input_size))*.1
+        
+        # predict outputs
+        dvib.eval()
+        output_data, output_latent = dvib(input_data)
+        output_data = output_data.detach().numpy()
+
+        # plot results
+        plt.figure()
+        plt.title('DVIB Example: Single Frequency Sine Wave')
+        plt.plot(x_data.squeeze(), input_data.squeeze(), label='Input')
+        plt.plot(x_data.squeeze(), output_data.squeeze(), label='Output')
+        plt.legend()
+        plt.grid()
+        plt.show()
+
+def train(epoch, model, optimizer, input_data):
     # forward pass
     output_data, output_latent = model(input_data)
 
     # compute loss
-    reg = reg_loss(output_latent, prior.sample())
-    pred = pred_loss(input_data, output_data)
-    loss = pred + beta*reg
+    loss = model.compute_loss(input_data, output_data, output_latent)
 
     # backpropagate and update optimizer
     optimizer.zero_grad()
@@ -114,45 +161,13 @@ def train(beta, epoch, model, optimizer, input_data):
 if __name__ == "__main__":
     # data parameters
     input_size = 500
-    latent_dim = 50  # in the paper, K variable
+    latent_dim = 2  # in the paper, K variable
     output_size = input_size
 
     # create DVIB
     dvib = DVIB(input_size, latent_dim, output_size)
 
-    # loss and optimizer
-    optimizer = optim.Adam(dvib.parameters())
-    beta = 1e-3
-    prior = Normal(torch.zeros(1,latent_dim), torch.ones(1,latent_dim))
+    # test on single frequency sine wave
+    dvib.test_simple_sinwave()
 
-    pred_loss = nn.MSELoss(reduction='mean')
-    reg_loss = nn.KLDivLoss(reduction='batchmean')
-
-    # train data (1D, continuous case)
-    n_samples = 1
-    x_data = torch.linspace(0, 2*math.pi, input_size)
-    input_data = torch.sin(x_data) + torch.rand((n_samples, input_size))*.1
-
-    # train
-    epochs = 2500
-    for epoch in range(epochs):
-        train(beta, epoch, dvib, optimizer, input_data)
-
-    # test data (1D, continuous case)
-    n_samples = 1
-    x_data = torch.linspace(0, 2*math.pi, input_size)
-    input_data = torch.sin(x_data) + torch.rand((n_samples, input_size))*.1
     
-    # predict outputs
-    dvib.eval()
-    output_data, output_latent = dvib(input_data)
-    output_data = output_data.detach().numpy()
-
-    # plot results
-    plt.figure()
-    plt.title('DVIB Example: 1D Continuous Function')
-    plt.plot(x_data.squeeze(), input_data.squeeze(), label='Input')
-    plt.plot(x_data.squeeze(), output_data.squeeze(), label='Output')
-    plt.legend()
-    plt.grid()
-    plt.show()
