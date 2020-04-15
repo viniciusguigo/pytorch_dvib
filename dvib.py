@@ -10,6 +10,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
+from torchvision import datasets, transforms
 from torch.distributions.normal import Normal
 
 import matplotlib.pyplot as plt
@@ -59,8 +60,7 @@ class DecoderDVIB(nn.Module):
         nn.init.xavier_uniform_(self.linear1.weight)
 
     def forward(self, x):
-        # forward pass through decoder
-        # return F.softmax(self.linear1(x), dim=-1) # for discrete
+        #return F.softmax(self.linear1(x), dim=-1)
         return self.linear1(x)    
 
 
@@ -85,9 +85,11 @@ class DVIB(nn.Module):
         self.encoder = EncoderDVIB(input_size, latent_dim)
         self.decoder = DecoderDVIB(latent_dim, output_size)
 
-        # loss function
-        self.pred_loss = nn.MSELoss(reduction='mean')  # prediction component
-        self.reg_loss = nn.KLDivLoss(reduction='batchmean')  # regularization
+        ## loss function
+        # prediction component
+        self.pred_loss = nn.MSELoss(reduction='mean')
+        # regularization component
+        self.reg_loss = nn.KLDivLoss(reduction='batchmean')
 
     def forward(self, x):
         # pass input through encoder
@@ -230,6 +232,104 @@ class DVIB(nn.Module):
 
         plt.show()
 
+    def test_mnist(self, vis_train_data=False):
+        """Tests DVIB on the MNIST dataset.
+        """
+        # optimizer
+        optimizer = optim.Adam(dvib.parameters())    
+
+        # train data (MNIST)
+        train_data = datasets.MNIST('data/', train=True, download=True,
+                       transform=transforms.Compose([
+                           transforms.ToTensor(),
+                           transforms.Normalize((0.1307,), (0.3081,))
+                       ]))
+        batch_size = 64
+        n_samples_train = train_data.data.shape[0]
+        train_dataloader = torch.utils.data.DataLoader(
+            train_data, batch_size=batch_size, shuffle=True)
+        train_dataiter = iter(train_dataloader)
+
+        # visualize training data
+        if vis_train_data:
+            # sample images and labels from dataloader
+            images, labels = train_dataiter.next()
+
+            # display a sample of them
+            plt.figure()
+            plt.suptitle('Batch Sampled from MNIST Dataset')
+            grid_size = math.ceil(math.sqrt(batch_size))
+            for index in range(batch_size):
+                plt.subplot(grid_size, grid_size, index+1)
+                plt.axis('off')
+                plt.imshow(images[index].numpy().squeeze(), cmap='gray_r')
+            plt.show()
+
+        # train
+        epochs = 1500
+        loss_vals = []
+        for epoch in range(epochs):
+            # sample train data
+            try:
+                input_data, labels = train_dataiter.next()
+            except StopIteration:
+                train_dataiter = iter(train_dataloader)
+                input_data, labels = train_dataiter.next()
+            # reshape to match DVIB
+            n_sampled = input_data.shape[0]
+            input_data = input_data.view(n_sampled, 28*28)
+
+            # update model
+            loss_val = train(epoch, dvib, optimizer, input_data)
+            loss_vals.append(loss_val)
+
+        # test dataloader
+        test_data = datasets.MNIST('data/', train=False, download=True,
+                       transform=transforms.Compose([
+                           transforms.ToTensor(),
+                           transforms.Normalize((0.1307,), (0.3081,))
+                       ]))
+        batch_size = 5
+        test_dataloader = torch.utils.data.DataLoader(
+            test_data, batch_size=batch_size, shuffle=True)
+        test_dataiter = iter(test_dataloader)
+
+        # sample test data
+        input_data, labels = test_dataiter.next()
+        n_sampled = input_data.shape[0]
+        input_data = input_data.view(n_sampled, 28*28)
+        
+        # predict outputs
+        dvib.eval()
+        output_data, output_latent, latent_mean, latent_std = dvib(input_data)
+        output_data = output_data.detach()
+
+        # # plot results
+        # # visual predictions
+        input_data = input_data.view(n_sampled, 28, 28)
+        output_data = output_data.view(n_sampled, 28, 28)
+        plt.figure()
+        plt.suptitle('DVIB MNIST Example: Input (top) vs Predicted (bottom)')
+        for index in range(batch_size):
+            # plot ground truth
+            plt.subplot(2, batch_size, index+1)
+            plt.axis('off')
+            plt.imshow(input_data[index], cmap='gray_r')
+            # plot prediction
+            plt.subplot(2, batch_size, index+batch_size+1)
+            plt.axis('off')
+            plt.imshow(output_data[index], cmap='gray_r')
+
+        # loss
+        plt.figure()
+        plt.title('DVIB Training Loss')
+        plt.xlabel('Epoch')
+        plt.ylabel('Loss Value')
+        plt.plot(loss_vals[::10])
+        plt.grid()
+
+        plt.show()
+
 def train(epoch, model, optimizer, input_data):
     # forward pass
     output_data, output_latent, latent_mean, latent_std = model(input_data)
@@ -250,16 +350,26 @@ def train(epoch, model, optimizer, input_data):
 
 
 if __name__ == "__main__":
-    # data parameters
-    input_size = 200
+    # # tests DVIB on single frequency sine wave
+    # input_size = 200
+    # latent_dim = 256  # in the paper, K variable
+    # output_size = input_size
+    # dvib = DVIB(input_size, latent_dim, output_size)
+    # dvib.test_1freq_sinewave()
+        
+    # # tests DVIB on multiple frequency sine wave
+    # input_size = 200
+    # latent_dim = 256  # in the paper, K variable
+    # output_size = input_size
+    # dvib = DVIB(input_size, latent_dim, output_size)
+    # dvib.test_multifreq_sinewave()
+
+    # tests DVIB on MNIST dataset
+    input_size = 28*28
     latent_dim = 256  # in the paper, K variable
     output_size = input_size
-
-    # create DVIB
-    dvib = DVIB(input_size, latent_dim, output_size)
-
-    # tests DVIB on single frequency sine wave
-    # dvib.test_1freq_sinewave()
-    dvib.test_multifreq_sinewave()
+    dvib = DVIB(
+        input_size, latent_dim, output_size)
+    dvib.test_mnist()
 
     
