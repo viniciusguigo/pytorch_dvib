@@ -14,7 +14,7 @@ from torchvision import datasets, transforms
 from torch.distributions.normal import Normal
 
 import matplotlib.pyplot as plt
-
+from matplotlib.patches import Ellipse
 
 class EncoderDVIB(nn.Module):
     """Encoder for the Deep Variational Information Bottleneck (DVIB).
@@ -80,7 +80,7 @@ class DVIB(nn.Module):
         self.output_size = output_size
         self.beta = 1e-3
         self.prior = Normal(torch.zeros(1,latent_dim),torch.ones(1,latent_dim))
-
+        
         # initialize encoder and decoder
         self.encoder = EncoderDVIB(input_size, latent_dim)
         self.decoder = DecoderDVIB(latent_dim, output_size)
@@ -88,8 +88,7 @@ class DVIB(nn.Module):
         ## loss function
         # prediction component
         self.pred_loss = nn.MSELoss(reduction='mean')
-        # regularization component
-        self.reg_loss = nn.KLDivLoss(reduction='batchmean')
+        # regularization component computed in self.compute_loss()
 
     def forward(self, x):
         # pass input through encoder
@@ -100,13 +99,18 @@ class DVIB(nn.Module):
 
         return output, latent, latent_mean, latent_std
 
-    def compute_loss(self, input_data, output_data, output_latent):
+    def compute_loss(self, input_data, output_data, output_latent, enc_mean=None, enc_std=None):
         """Compute DVIB loss for a pair of input and output."""
-        reg = self.reg_loss(output_latent, self.prior.sample())
-        pred = self.pred_loss(input_data, output_data)
-        loss = pred + self.beta*reg
+        # compute KL between encoder output and prior using pytorch dists
+        enc_dist = Normal(enc_mean.detach(),enc_std.detach())
+        kl_vec = torch.distributions.kl.kl_divergence(enc_dist, self.prior)
+        kl_loss = kl_vec.mean()
 
-        return loss
+        # compute loss
+        pred = self.pred_loss(input_data, output_data)
+        loss = pred + self.beta*kl_loss
+
+        return loss, pred, kl_loss
 
     def test_1freq_sinewave(self):
         """Tests DVIB on learning how to generate a single frequency sine wave.
@@ -168,9 +172,11 @@ class DVIB(nn.Module):
         input_data = torch.sin(x_data) + torch.rand((n_samples, input_size))*.1
 
         # train
-        n_freqs = 5
-        epochs = 5000
+        n_freqs = 3
+        epochs = 2000
         loss_vals = []
+        pred_loss_vals = []
+        kl_loss_vals = []
         for epoch in range(epochs):
             # generate train data (1D sine wave)
             n_samples = 1
@@ -180,8 +186,10 @@ class DVIB(nn.Module):
                              + torch.rand((n_samples, input_size))*.1
 
             # update model
-            loss_val = train(epoch, dvib, optimizer, input_data)
+            loss_val, pred_loss_val, kl_loss_val = train(epoch, dvib, optimizer, input_data)
             loss_vals.append(loss_val)
+            pred_loss_vals.append(pred_loss_val)
+            kl_loss_vals.append(kl_loss_val)
 
         # test data (1D sine wave)
         n_samples = 1
@@ -202,33 +210,44 @@ class DVIB(nn.Module):
         plt.plot(x_data.squeeze(), output_data.squeeze(), label='Output')
         plt.legend()
         plt.grid()
+
         # loss
         plt.figure()
         plt.title('DVIB Training Loss')
         plt.xlabel('Epoch')
         plt.ylabel('Loss Value')
-        plt.plot(loss_vals[::10])
+        x_epochs = torch.arange(0, epochs)
+        smooth_int = 20
+        plt.plot(x_epochs[::smooth_int], loss_vals[::smooth_int], '-', label='Total Loss')
+        plt.plot(x_epochs[::smooth_int], pred_loss_vals[::smooth_int], '--', label='Pred Loss')
+        plt.plot(x_epochs[::smooth_int], kl_loss_vals[::smooth_int], '--', label='KL Loss (mean, unscaled)')
+        plt.legend()
         plt.grid()
-        # # visualize latent space over multiple predictions
-        # plt.figure()
-        # colors = ['bo', 'ro']
-        # labels = ['K0', 'K1']
-        # for i in range(n_freqs):
-        #     freq = 1+1
-        #     n_samples_latent = 100
-        #     for j in range(n_samples_latent):
-        #         # generate input data and predictions
-        #         x_data = torch.linspace(0, freq*2*math.pi, input_size)
-        #         input_data = torch.sin(x_data) + torch.rand((n_samples, input_size))*.1
-        #         output_data, output_latent, latent_mean, latent_std = dvib(input_data)
 
-        #         # plot latent variables
-        #         latent_mean = latent_mean.detach().numpy().squeeze()
-        #         if j == 0:  # add label
-        #             plt.plot(latent_mean[0], latent_mean[1], colors[i], alpha=0.5, label=labels[i])
-        #         else:
-        #             plt.plot(latent_mean[0], latent_mean[1], colors[i], alpha=0.5)
-        # plt.legend()
+        # visualize latent space over multiple predictions
+        if self.latent_dim == 2:
+            import numpy as np
+            fig, ax = plt.subplots()
+            plt.title('2D Encoder Mean for each Sine Frequency (when K=2)')
+            colors = ['bo', 'ro', 'go', 'yo', 'ko']
+            labels = [r'$\pi$', r'$4\pi$', r'$6\pi$', r'$8\pi$', r'$10\pi$']
+            for i in range(n_freqs):
+                freq = i+1
+                n_samples_latent = 50
+                for j in range(n_samples_latent):
+                    # generate input data and predictions
+                    x_data = torch.linspace(0, freq*2*math.pi, input_size)
+                    input_data = torch.sin(x_data) + torch.rand((n_samples, input_size))*.1
+                    output_data, output_latent, latent_mean, latent_std = dvib(input_data)
+
+                    # plot latent variables
+                    latent_mean = latent_mean.detach().numpy().squeeze()
+                    if j == 0:  # add label
+                        plt.plot(latent_mean[0], latent_mean[1], colors[i], alpha=0.5, label=labels[i])
+                    else:
+                        plt.plot(latent_mean[0], latent_mean[1], colors[i], alpha=0.5)
+            plt.grid()
+            plt.legend()
 
         plt.show()
 
@@ -330,12 +349,13 @@ class DVIB(nn.Module):
 
         plt.show()
 
+
 def train(epoch, model, optimizer, input_data):
     # forward pass
     output_data, output_latent, latent_mean, latent_std = model(input_data)
 
     # compute loss
-    loss = model.compute_loss(input_data, output_data, output_latent)
+    loss, pred, kl_loss = model.compute_loss(input_data, output_data, output_latent, latent_mean, latent_std)
 
     # backpropagate and update optimizer
     optimizer.zero_grad()
@@ -344,9 +364,10 @@ def train(epoch, model, optimizer, input_data):
 
     # print statistics
     if epoch % 100 == 0:
-        print(f'Epoch {epoch} | Loss {loss.item()}')
+        print('Epoch {} | Loss {} | Pred Loss {} | KL Loss: {}'.format(
+            epoch, loss.item(), pred.item(), kl_loss.item()))
 
-    return loss.item()
+    return loss.item(), pred.item(), kl_loss.item()
 
 
 if __name__ == "__main__":
@@ -357,19 +378,19 @@ if __name__ == "__main__":
     # dvib = DVIB(input_size, latent_dim, output_size)
     # dvib.test_1freq_sinewave()
         
-    # # tests DVIB on multiple frequency sine wave
-    # input_size = 200
+    # tests DVIB on multiple frequency sine wave
+    input_size = 200
+    latent_dim = 2  # in the paper, K variable
+    output_size = input_size
+    dvib = DVIB(input_size, latent_dim, output_size)
+    dvib.test_multifreq_sinewave()
+
+    # # tests DVIB on MNIST dataset
+    # input_size = 28*28
     # latent_dim = 256  # in the paper, K variable
     # output_size = input_size
-    # dvib = DVIB(input_size, latent_dim, output_size)
-    # dvib.test_multifreq_sinewave()
-
-    # tests DVIB on MNIST dataset
-    input_size = 28*28
-    latent_dim = 256  # in the paper, K variable
-    output_size = input_size
-    dvib = DVIB(
-        input_size, latent_dim, output_size)
-    dvib.test_mnist()
+    # dvib = DVIB(
+    #     input_size, latent_dim, output_size)
+    # dvib.test_mnist()
 
     
