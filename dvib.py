@@ -51,17 +51,23 @@ class EncoderDVIB(nn.Module):
 class DecoderDVIB(nn.Module):
     """Decoder for the Deep Variational Information Bottleneck (DVIB).
     """
-    def __init__(self, latent_dim, output_size):        
+    def __init__(self, latent_dim, output_size, classif_loss):        
         super(DecoderDVIB, self).__init__()
+        self.classif_loss = classif_loss
         # decoder network
         self.linear1 = nn.Linear(latent_dim, output_size)
+        self.log_softmax = nn.LogSoftmax(dim=1)
 
         # network initialization
         nn.init.xavier_uniform_(self.linear1.weight)
 
     def forward(self, x):
-        #return F.softmax(self.linear1(x), dim=-1)
-        return self.linear1(x)    
+        if self.classif_loss:
+            # using classification loss on decoder, return softmax values
+            return self.log_softmax(self.linear1(x))
+        else:
+            # standard reconstruction loss
+            return self.linear1(x)    
 
 
 class DVIB(nn.Module):
@@ -72,7 +78,8 @@ class DVIB(nn.Module):
         latent_dim: dimension of encoder mean and std
         output_size: size of the output data
     """
-    def __init__(self, input_size, latent_dim, output_size):        
+    def __init__(self, input_size, latent_dim, output_size,
+                       classif_loss=False):        
         super(DVIB, self).__init__()
         # store DVIB hyperparamenters
         self.input_size = input_size
@@ -80,14 +87,20 @@ class DVIB(nn.Module):
         self.output_size = output_size
         self.beta = 1e-3
         self.prior = Normal(torch.zeros(1,latent_dim),torch.ones(1,latent_dim))
+        self.classif_loss = classif_loss
         
         # initialize encoder and decoder
         self.encoder = EncoderDVIB(input_size, latent_dim)
-        self.decoder = DecoderDVIB(latent_dim, output_size)
+        self.decoder = DecoderDVIB(latent_dim, output_size, classif_loss)
 
         ## loss function
         # prediction component
-        self.pred_loss = nn.MSELoss(reduction='mean')
+        if classif_loss:
+            # binary classification (cross entropy loss)
+            self.pred_loss = nn.NLLLoss(reduction='mean')
+        else:
+            # standard reconstruction loss (MSE between input and outputs)
+            self.pred_loss = nn.MSELoss(reduction='mean')
         # regularization component computed in self.compute_loss()
 
     def forward(self, x):
@@ -273,7 +286,7 @@ class DVIB(nn.Module):
                            transforms.ToTensor(),
                            transforms.Normalize((0.1307,), (0.3081,))
                        ]))
-        batch_size = 256
+        batch_size = 1024
         n_samples_train = train_data.data.shape[0]
         train_dataloader = torch.utils.data.DataLoader(
             train_data, batch_size=batch_size, shuffle=True)
@@ -295,7 +308,7 @@ class DVIB(nn.Module):
             plt.show()
 
         # train
-        epochs = 2500
+        epochs = 1000
         loss_vals = []
         pred_loss_vals = []
         kl_loss_vals = []
@@ -409,13 +422,169 @@ class DVIB(nn.Module):
 
         plt.show()
 
+    def test_mnist_classification(self, vis_train_data=False):
+        """Tests DVIB on the MNIST dataset using classification loss instead
+        of a reconstruction loss.
+        """
+        # optimizer
+        optimizer = optim.Adam(dvib.parameters())    
 
-def train(epoch, model, optimizer, input_data):
+        # train data (MNIST)
+        train_data = datasets.MNIST('data/', train=True, download=True,
+                       transform=transforms.Compose([
+                           transforms.ToTensor(),
+                           transforms.Normalize((0.1307,), (0.3081,))
+                       ]))
+        n_samples_train = train_data.data.shape[0]
+        batch_size = 256 # n_samples_train
+        train_dataloader = torch.utils.data.DataLoader(
+            train_data, batch_size=batch_size, shuffle=True)
+        train_dataiter = iter(train_dataloader)
+
+        # visualize training data
+        if vis_train_data:
+            # sample images and labels from dataloader
+            images, labels = train_dataiter.next()
+
+            # display a sample of them
+            plt.figure()
+            plt.suptitle('Batch Sampled from MNIST Dataset')
+            grid_size = math.ceil(math.sqrt(batch_size))
+            for index in range(batch_size):
+                plt.subplot(grid_size, grid_size, index+1)
+                plt.axis('off')
+                plt.imshow(images[index].numpy().squeeze(), cmap='gray_r')
+            plt.show()
+
+        # train
+        epochs = 2500
+        loss_vals = []
+        pred_loss_vals = []
+        kl_loss_vals = []
+        for epoch in range(epochs):
+            # sample train data
+            try:
+                input_data, labels = train_dataiter.next()
+            except StopIteration:
+                train_dataiter = iter(train_dataloader)
+                input_data, labels = train_dataiter.next()
+            # reshape to match DVIB
+            n_sampled = input_data.shape[0]
+            input_data = input_data.view(n_sampled, 28*28)
+
+            # update model
+            loss_val, pred_loss_val, kl_loss_val = train(epoch, dvib, optimizer, input_data, label_data=labels)
+            loss_vals.append(loss_val)
+            pred_loss_vals.append(pred_loss_val)
+            kl_loss_vals.append(kl_loss_val)
+
+        # test dataloader
+        test_data = datasets.MNIST('data/', train=False, download=True,
+                       transform=transforms.Compose([
+                           transforms.ToTensor(),
+                           transforms.Normalize((0.1307,), (0.3081,))
+                       ]))
+        batch_size = 25
+        test_dataloader = torch.utils.data.DataLoader(
+            test_data, batch_size=batch_size, shuffle=True)
+        test_dataiter = iter(test_dataloader)
+
+        # sample test data
+        input_data, labels = test_dataiter.next()
+        n_sampled = input_data.shape[0]
+        input_data = input_data.view(n_sampled, 28*28)
+        
+        # predict outputs
+        dvib.eval()
+        output_data, output_latent, latent_mean, latent_std = dvib(input_data)
+        output_data = output_data
+        output_labels = torch.argmax(output_data, axis=1).detach()
+
+        # # plot results
+        # # visual predictions
+        input_data = input_data.view(n_sampled, 28, 28)
+        plt.figure()
+        plt.suptitle('DVIB MNIST Example: Input (top) vs Predicted (bottom)')
+        for index in range(batch_size):
+            # plot ground truth
+            ax = plt.subplot(5, 5, index+1)
+            ax.text(0.5,-0.1, f'Pred: {output_labels[index].item()}', size=12, ha="center", 
+                    transform=ax.transAxes)
+            plt.axis('off')
+            plt.imshow(input_data[index], cmap='gray_r')
+
+        # loss
+        plt.figure()
+        plt.title('DVIB Training Loss')
+        plt.xlabel('Epoch')
+        plt.ylabel('Loss Value')
+        x_epochs = torch.arange(0, epochs)
+        smooth_int = 10
+        plt.plot(x_epochs[::smooth_int], loss_vals[::smooth_int], '-', label='Total Loss')
+        plt.plot(x_epochs[::smooth_int], pred_loss_vals[::smooth_int], '--', label='Pred Loss')
+        plt.plot(x_epochs[::smooth_int], kl_loss_vals[::smooth_int], '--', label='KL Loss (mean, unscaled)')
+        plt.legend()
+        plt.grid()
+
+        # visualize latent space over multiple predictions
+        if self.latent_dim == 2:
+            import numpy as np
+            fig, ax = plt.subplots()
+            plt.title('2D Encoder Mean for each MNIST class (when K=2)')
+            colors = ['bo','ro','go','yo','mo','b*','r*','g*','y*','m*']
+            labels = ['0','1','2','3','4','5','6','7','8','9']
+
+            for i in range(10):
+                n_samples_latent = 20
+                ## generate input data for class and its predictions
+                # select only images from the desired class (number == i)
+                idxs_label = test_data.targets == i
+                idxs_numbers = [k for k, val in enumerate(idxs_label) if val]
+
+                # create random sampler and dataloader for specific class
+                test_sampler = torch.utils.data.sampler.SubsetRandomSampler(idxs_numbers)
+                test_sampler_loader = iter(torch.utils.data.DataLoader(test_data, batch_size=1, 
+                                           sampler=test_sampler))
+
+                for j in range(n_samples_latent):
+                    # select a random image from the desired class
+                    input_data, _ = test_sampler_loader.next()
+                    input_data = input_data.view(1, 28*28)
+
+                    # # visualize selected class
+                    # plt.imshow(input_data.view(28, 28), cmap='gray_r')
+                    # plt.show()
+                    
+                    # predict output
+                    output_data, output_latent, latent_mean, latent_std = dvib(input_data)
+
+                    # plot latent variables
+                    latent_mean = latent_mean.detach().numpy().squeeze()
+                    if j == 0:  # add label
+                        plt.plot(latent_mean[0], latent_mean[1], colors[i], alpha=0.5, label=labels[i])
+                    else:
+                        plt.plot(latent_mean[0], latent_mean[1], colors[i], alpha=0.5)
+            plt.grid()
+            plt.legend()
+
+        plt.show()
+
+
+def train(epoch, model, optimizer, input_data, label_data=None):
     # forward pass
-    output_data, output_latent, latent_mean, latent_std = model(input_data)
+    if model.classif_loss:
+        # using DVIB for classification and not reconstruction
+        output_data, output_latent, latent_mean, latent_std = model(input_data)
 
-    # compute loss
-    loss, pred, kl_loss = model.compute_loss(input_data, output_data, output_latent, latent_mean, latent_std)
+        # compute loss
+        loss, pred, kl_loss = model.compute_loss(output_data, label_data, output_latent, latent_mean, latent_std)
+
+    else:
+        # standard reconstruction
+        output_data, output_latent, latent_mean, latent_std = model(input_data)
+
+        # compute loss
+        loss, pred, kl_loss = model.compute_loss(input_data, output_data, output_latent, latent_mean, latent_std)
 
     # backpropagate and update optimizer
     optimizer.zero_grad()
@@ -438,12 +607,12 @@ if __name__ == "__main__":
     # dvib = DVIB(input_size, latent_dim, output_size)
     # dvib.test_1freq_sinewave()
         
-    # tests DVIB on multiple frequency sine wave
-    input_size = 200
-    latent_dim = 2  # K variable (paper)
-    output_size = input_size
-    dvib = DVIB(input_size, latent_dim, output_size)
-    dvib.test_multifreq_sinewave()
+    # # tests DVIB on multiple frequency sine wave
+    # input_size = 200
+    # latent_dim = 2  # K variable (paper)
+    # output_size = input_size
+    # dvib = DVIB(input_size, latent_dim, output_size)
+    # dvib.test_multifreq_sinewave()
 
     # # tests DVIB on MNIST dataset
     # input_size = 28*28
@@ -451,7 +620,16 @@ if __name__ == "__main__":
     # output_size = input_size
     # dvib = DVIB(
     #     input_size, latent_dim, output_size)
-    # dvib.beta = 1e-1
+    # dvib.beta = 1e-4
     # dvib.test_mnist()
+
+    # tests DVIB on MNIST dataset (classification loss)
+    input_size = 28*28
+    latent_dim = 256  # K variable (paper)
+    output_size = 10  # number of classes (10 digits)
+    dvib = DVIB(
+        input_size, latent_dim, output_size, classif_loss=True)
+    dvib.beta = 1e-4
+    dvib.test_mnist_classification()
 
     
