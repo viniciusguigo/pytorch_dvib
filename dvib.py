@@ -112,7 +112,8 @@ class DVIB(nn.Module):
 
         return output, latent, latent_mean, latent_std
 
-    def compute_loss(self, input_data, output_data, output_latent, enc_mean=None, enc_std=None):
+    def compute_loss(self, input_data, output_data, output_latent,
+                        enc_mean=None, enc_std=None):
         """Compute DVIB loss for a pair of input and output."""
         # compute KL between encoder output and prior using pytorch dists
         enc_dist = Normal(enc_mean.detach(),enc_std.detach())
@@ -144,7 +145,8 @@ class DVIB(nn.Module):
                              + torch.rand((n_samples, input_size))*.1
 
             # update model
-            loss_val, pred_loss_val, kl_loss_val = train(epoch, dvib, optimizer, input_data)
+            loss_val, pred_loss_val, kl_loss_val = train(
+                                            epoch, dvib, optimizer, input_data)
             loss_vals.append(loss_val)
             pred_loss_vals.append(pred_loss_val)
             kl_loss_vals.append(kl_loss_val)
@@ -175,9 +177,12 @@ class DVIB(nn.Module):
         plt.ylabel('Loss Value')
         x_epochs = torch.arange(0, epochs)
         smooth_int = 20
-        plt.plot(x_epochs[::smooth_int], loss_vals[::smooth_int], '-', label='Total Loss')
-        plt.plot(x_epochs[::smooth_int], pred_loss_vals[::smooth_int], '--', label='Pred Loss')
-        plt.plot(x_epochs[::smooth_int], kl_loss_vals[::smooth_int], '--', label='KL Loss (mean, unscaled)')
+        plt.plot(x_epochs[::smooth_int], loss_vals[::smooth_int], '-',
+                    label='Total Loss')
+        plt.plot(x_epochs[::smooth_int], pred_loss_vals[::smooth_int], '--',
+                    label='Pred Loss')
+        plt.plot(x_epochs[::smooth_int], kl_loss_vals[::smooth_int], '--',
+                    label='KL Loss (mean, unscaled)')
         plt.legend()
         plt.grid()
 
@@ -209,7 +214,8 @@ class DVIB(nn.Module):
                              + torch.rand((n_samples, input_size))*.1
 
             # update model
-            loss_val, pred_loss_val, kl_loss_val = train(epoch, dvib, optimizer, input_data)
+            loss_val, pred_loss_val, kl_loss_val = train(
+                                            epoch, dvib, optimizer, input_data)
             loss_vals.append(loss_val)
             pred_loss_vals.append(pred_loss_val)
             kl_loss_vals.append(kl_loss_val)
@@ -241,9 +247,12 @@ class DVIB(nn.Module):
         plt.ylabel('Loss Value')
         x_epochs = torch.arange(0, epochs)
         smooth_int = 20
-        plt.plot(x_epochs[::smooth_int], loss_vals[::smooth_int], '-', label='Total Loss')
-        plt.plot(x_epochs[::smooth_int], pred_loss_vals[::smooth_int], '--', label='Pred Loss')
-        plt.plot(x_epochs[::smooth_int], kl_loss_vals[::smooth_int], '--', label='KL Loss (mean, unscaled)')
+        plt.plot(x_epochs[::smooth_int], loss_vals[::smooth_int], '-',
+                    label='Total Loss')
+        plt.plot(x_epochs[::smooth_int], pred_loss_vals[::smooth_int], '--',
+                    label='Pred Loss')
+        plt.plot(x_epochs[::smooth_int], kl_loss_vals[::smooth_int], '--',
+                    label='KL Loss (mean, unscaled)')
         plt.legend()
         plt.grid()
 
@@ -260,15 +269,19 @@ class DVIB(nn.Module):
                 for j in range(n_samples_latent):
                     # generate input data and predictions
                     x_data = torch.linspace(0, freq*2*math.pi, input_size)
-                    input_data = torch.sin(x_data) + torch.rand((n_samples, input_size))*.1
-                    output_data, output_latent, latent_mean, latent_std = dvib(input_data)
+                    input_data = torch.sin(x_data) \
+                                    + torch.rand((n_samples, input_size))*.1
+                    output_data, output_latent, latent_mean, latent_std = dvib(
+                                                                    input_data)
 
                     # plot latent variables
                     latent_mean = latent_mean.detach().numpy().squeeze()
                     if j == 0:  # add label
-                        plt.plot(latent_mean[0], latent_mean[1], colors[i], alpha=0.5, label=labels[i])
+                        plt.plot(latent_mean[0], latent_mean[1], colors[i],
+                                                    alpha=0.5, label=labels[i])
                     else:
-                        plt.plot(latent_mean[0], latent_mean[1], colors[i], alpha=0.5)
+                        plt.plot(latent_mean[0], latent_mean[1], colors[i],
+                                                    alpha=0.5)
             plt.grid()
             plt.legend()
 
@@ -324,7 +337,8 @@ class DVIB(nn.Module):
             input_data = input_data.view(n_sampled, 28*28)
 
             # update model
-            loss_val, pred_loss_val, kl_loss_val = train(epoch, dvib, optimizer, input_data)
+            loss_val, pred_loss_val, kl_loss_val = train(
+                                            epoch, dvib, optimizer, input_data)
             loss_vals.append(loss_val)
             pred_loss_vals.append(pred_loss_val)
             kl_loss_vals.append(kl_loss_val)
@@ -373,9 +387,12 @@ class DVIB(nn.Module):
         plt.ylabel('Loss Value')
         x_epochs = torch.arange(0, epochs)
         smooth_int = 20
-        plt.plot(x_epochs[::smooth_int], loss_vals[::smooth_int], '-', label='Total Loss')
-        plt.plot(x_epochs[::smooth_int], pred_loss_vals[::smooth_int], '--', label='Pred Loss')
-        plt.plot(x_epochs[::smooth_int], kl_loss_vals[::smooth_int], '--', label='KL Loss (mean, unscaled)')
+        plt.plot(x_epochs[::smooth_int], loss_vals[::smooth_int],
+                    '-', label='Total Loss')
+        plt.plot(x_epochs[::smooth_int], pred_loss_vals[::smooth_int],
+                    '--', label='Pred Loss')
+        plt.plot(x_epochs[::smooth_int], kl_loss_vals[::smooth_int],
+                    '--', label='KL Loss (mean, unscaled)')
         plt.legend()
         plt.grid()
 
@@ -395,9 +412,12 @@ class DVIB(nn.Module):
                 idxs_numbers = [k for k, val in enumerate(idxs_label) if val]
 
                 # create random sampler and dataloader for specific class
-                test_sampler = torch.utils.data.sampler.SubsetRandomSampler(idxs_numbers)
-                test_sampler_loader = iter(torch.utils.data.DataLoader(test_data, batch_size=1, 
-                                           sampler=test_sampler))
+                test_sampler = torch.utils.data.sampler.SubsetRandomSampler(
+                                                                idxs_numbers)
+                test_sampler_loader = iter(torch.utils.data.DataLoader(
+                                            test_data,
+                                            batch_size=1, 
+                                            sampler=test_sampler))
 
                 for j in range(n_samples_latent):
                     # select a random image from the desired class
@@ -409,20 +429,23 @@ class DVIB(nn.Module):
                     # plt.show()
                     
                     # predict output
-                    output_data, output_latent, latent_mean, latent_std = dvib(input_data)
+                    output_data, output_latent, latent_mean, latent_std = dvib(
+                                                                    input_data)
 
                     # plot latent variables
                     latent_mean = latent_mean.detach().numpy().squeeze()
                     if j == 0:  # add label
-                        plt.plot(latent_mean[0], latent_mean[1], colors[i], alpha=0.5, label=labels[i])
+                        plt.plot(latent_mean[0], latent_mean[1], colors[i],
+                                                    alpha=0.5, label=labels[i])
                     else:
-                        plt.plot(latent_mean[0], latent_mean[1], colors[i], alpha=0.5)
+                        plt.plot(latent_mean[0], latent_mean[1], colors[i],
+                                                    alpha=0.5)
             plt.grid()
             plt.legend()
 
         plt.show()
 
-    def test_mnist_classification(self, vis_train_data=False):
+    def test_mnist_classification(self, vis_train_data=False, plot_tsne=False):
         """Tests DVIB on the MNIST dataset using classification loss instead
         of a reconstruction loss.
         """
@@ -473,7 +496,8 @@ class DVIB(nn.Module):
             input_data = input_data.view(n_sampled, 28*28)
 
             # update model
-            loss_val, pred_loss_val, kl_loss_val = train(epoch, dvib, optimizer, input_data, label_data=labels)
+            loss_val, pred_loss_val, kl_loss_val = train(
+                        epoch, dvib, optimizer, input_data, label_data=labels)
             loss_vals.append(loss_val)
             pred_loss_vals.append(pred_loss_val)
             kl_loss_vals.append(kl_loss_val)
@@ -508,8 +532,8 @@ class DVIB(nn.Module):
         for index in range(batch_size):
             # plot ground truth
             ax = plt.subplot(5, 5, index+1)
-            ax.text(0.5,-0.1, f'Pred: {output_labels[index].item()}', size=12, ha="center", 
-                    transform=ax.transAxes)
+            ax.text(0.5,-0.1, f'Pred: {output_labels[index].item()}',
+                    size=12, ha="center", transform=ax.transAxes)
             plt.axis('off')
             plt.imshow(input_data[index], cmap='gray_r')
 
@@ -520,9 +544,12 @@ class DVIB(nn.Module):
         plt.ylabel('Loss Value')
         x_epochs = torch.arange(0, epochs)
         smooth_int = 10
-        plt.plot(x_epochs[::smooth_int], loss_vals[::smooth_int], '-', label='Total Loss')
-        plt.plot(x_epochs[::smooth_int], pred_loss_vals[::smooth_int], '--', label='Pred Loss')
-        plt.plot(x_epochs[::smooth_int], kl_loss_vals[::smooth_int], '--', label='KL Loss (mean, unscaled)')
+        plt.plot(x_epochs[::smooth_int], loss_vals[::smooth_int],
+                                        '-', label='Total Loss')
+        plt.plot(x_epochs[::smooth_int], pred_loss_vals[::smooth_int],
+                                        '--', label='Pred Loss')
+        plt.plot(x_epochs[::smooth_int], kl_loss_vals[::smooth_int],
+                                        '--', label='KL Loss (mean, unscaled)')
         plt.legend()
         plt.grid()
 
@@ -542,9 +569,12 @@ class DVIB(nn.Module):
                 idxs_numbers = [k for k, val in enumerate(idxs_label) if val]
 
                 # create random sampler and dataloader for specific class
-                test_sampler = torch.utils.data.sampler.SubsetRandomSampler(idxs_numbers)
-                test_sampler_loader = iter(torch.utils.data.DataLoader(test_data, batch_size=1, 
-                                           sampler=test_sampler))
+                test_sampler = torch.utils.data.sampler.SubsetRandomSampler(
+                                                                idxs_numbers)
+                test_sampler_loader = iter(torch.utils.data.DataLoader(
+                                            test_data,
+                                            batch_size=1, 
+                                            sampler=test_sampler))
 
                 for j in range(n_samples_latent):
                     # select a random image from the desired class
@@ -556,16 +586,59 @@ class DVIB(nn.Module):
                     # plt.show()
                     
                     # predict output
-                    output_data, output_latent, latent_mean, latent_std = dvib(input_data)
+                    output_data, output_latent, latent_mean, latent_std = dvib(
+                                                                    input_data)
 
                     # plot latent variables
                     latent_mean = latent_mean.detach().numpy().squeeze()
                     if j == 0:  # add label
-                        plt.plot(latent_mean[0], latent_mean[1], colors[i], alpha=0.5, label=labels[i])
+                        plt.plot(latent_mean[0], latent_mean[1], colors[i],
+                                                alpha=0.5, label=labels[i])
                     else:
-                        plt.plot(latent_mean[0], latent_mean[1], colors[i], alpha=0.5)
+                        plt.plot(latent_mean[0], latent_mean[1], colors[i],
+                                                alpha=0.5)
             plt.grid()
             plt.legend()
+
+        # visualize t-sne plot
+        if plot_tsne:
+            from MulticoreTSNE import MulticoreTSNE as TSNE
+            print('Generating t-SNE plot...')
+
+            # re-loading test data
+            test_data = datasets.MNIST('data/', train=False, download=True,
+                        transform=transforms.Compose([
+                            transforms.ToTensor(),
+                            transforms.Normalize((0.1307,), (0.3081,))
+                        ]))
+            batch_size = 10000
+            test_dataloader = torch.utils.data.DataLoader(
+                test_data, batch_size=batch_size, shuffle=True)
+            test_dataiter = iter(test_dataloader)
+            input_data, labels = test_dataiter.next()
+            n_sampled = input_data.shape[0]
+            input_data = input_data.view(n_sampled, 28*28) 
+
+            # generating new predictions with trained model
+            output_data, output_latent, latent_mean, latent_std = dvib(
+                                                                    input_data)
+
+            # generate t-sne data
+            embeddings = TSNE(n_jobs=4).fit_transform(
+                                                latent_mean.detach().numpy())
+
+            # plot it
+            vis_x = embeddings[:, 0]
+            vis_y = embeddings[:, 1]
+            plt.figure()
+            plt.title('DVIB Latent Mean via t-SNE')
+            plt.scatter(
+                vis_x, vis_y,
+                c=labels, cmap=plt.cm.get_cmap("jet", 10), marker='.')
+            plt.colorbar(ticks=range(10))
+            plt.clim(-0.5, 9.5)
+            plt.show()
+
 
         plt.show()
 
@@ -577,14 +650,16 @@ def train(epoch, model, optimizer, input_data, label_data=None):
         output_data, output_latent, latent_mean, latent_std = model(input_data)
 
         # compute loss
-        loss, pred, kl_loss = model.compute_loss(output_data, label_data, output_latent, latent_mean, latent_std)
+        loss, pred, kl_loss = model.compute_loss(
+            output_data, label_data, output_latent, latent_mean, latent_std)
 
     else:
         # standard reconstruction
         output_data, output_latent, latent_mean, latent_std = model(input_data)
 
         # compute loss
-        loss, pred, kl_loss = model.compute_loss(input_data, output_data, output_latent, latent_mean, latent_std)
+        loss, pred, kl_loss = model.compute_loss(
+            input_data, output_data, output_latent, latent_mean, latent_std)
 
     # backpropagate and update optimizer
     optimizer.zero_grad()
@@ -593,8 +668,8 @@ def train(epoch, model, optimizer, input_data, label_data=None):
 
     # print statistics
     if epoch % 100 == 0:
-        print('Epoch {} | Loss {} | Pred Loss {} | KL Loss: {}'.format(
-            epoch, loss.item(), pred.item(), kl_loss.item()))
+        print(f'Epoch {epoch:.4f} | Loss {loss.item():.4f} | ' + \
+            f'Pred Loss {pred.item():.4f} | KL Loss: {kl_loss.item():.4f}')
 
     return loss.item(), pred.item(), kl_loss.item()
 
@@ -625,7 +700,7 @@ if __name__ == "__main__":
 
     # tests DVIB on MNIST dataset (classification loss)
     input_size = 28*28
-    latent_dim = 256  # K variable (paper)
+    latent_dim = 512  # K variable (paper)
     output_size = 10  # number of classes (10 digits)
     dvib = DVIB(
         input_size, latent_dim, output_size, classif_loss=True)
